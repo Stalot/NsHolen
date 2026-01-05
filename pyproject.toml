@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "NsHolen"
+description = "Labubu"
+version = "0.0.1.dev0"
+license = "MIT"
+requires-python = ">= 3.10"
+dependencies = ["requests=="]
+keywords=["NationStates"]
+authors = [
+  {name = "Orly Neto", email = "orly2carvalhoneto@gmail.com"}
+]
+maintainers = [
+  {name = "Orly Neto", email = "orly2carvalhoneto@gmail.com"}
+]
+dynamic = ["readme"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nsholen*"]
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"], content-type = "text/markdown"}
