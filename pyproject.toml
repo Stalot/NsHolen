@@ -3,12 +3,12 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "NsHolen"
+name = "nsholen"
 description = "Labubu"
 version = "0.0.1.dev0"
 license = "MIT"
 requires-python = ">= 3.10"
-dependencies = ["requests=="]
+dependencies = ["requests==2.32.5"]
 keywords=["NationStates"]
 authors = [
   {name = "Orly Neto", email = "orly2carvalhoneto@gmail.com"}
