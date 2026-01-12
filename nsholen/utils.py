@@ -1,12 +1,30 @@
 import requests
-from urllib.parse import quote_plus, urljoin
-from typing import Any, Callable
+from typing import Any
+import time
+from .exceptions import UserAgentError
+
+class Auth:
+    def __init__(self, **kwargs):
+        self.data = {}
+        self.data.update(kwargs)
+
+    def __call__(self, **kwargs):
+        self.data.update(kwargs)
+    
+    def get(self, key: str | None = None):
+        try:
+            return self.data if not key else self.data[key]
+        except KeyError:
+            raise ValueError(f"'{key}' not found")
+
+    def update(self, data: dict[str, Any]):
+        self.data.update(data)
 
 class Headers:
     def __init__(self, headers: dict[str, str] | None = None):
         self.headers = headers if headers else {}
     
-    def __call__(self, key: str = None, default: Any | None = None):
+    def __call__(self, key: str | None = None, default: Any | None = None):
         if key:
             return self.headers.get(key, default)
         return self.headers
@@ -18,26 +36,12 @@ class Headers:
     def clear_all(self) -> None:
         self.headers = {}
 
-class ApiResponse:
-    def __init__(self, status_code: int, binary, text: str, headers: Any):
-        self.status_code: int = status_code
-        self.text: str = text
-        self.binary: bin = binary
-        self.response_headers: Headers= Headers(headers)
-    
-    def __str__(self):
-        return f"[STATUS: {self.status_code}]"
-    
-    def response_headers(self) -> Headers:
-        """
-        Returns NationStates API's headers response as a Headers() object.
-        """
-        return self.response_headers
-
 class QueryString:
-    def __init__(self):
-        self.arguments = []
-        self.key_arguments = {}
+    def __init__(self,
+                 args: list[str] | None = None,
+                 kwargs: dict[str, str] | None = None):
+        self.arguments = args if args else []
+        self.key_arguments = kwargs if kwargs else {}
     
     def __str__(self):
         return "QueryString()"
@@ -48,7 +52,6 @@ class QueryString:
         if kwargs:
             for k, v in kwargs.items():
                 self.key_arguments.update({k: v})
-        
         
     def build(self):
         def parse_arguments(separator: str, args: list[str] | dict[str, str]) -> str:
@@ -76,7 +79,8 @@ class UrlManager:
             base: str,
             path: list[str] = None,
             unique_slug: tuple[str, str] | None = None,
-            querystring: QueryString = None) -> str:
+            querystring: QueryString | None = None,
+            api_version: int = 12) -> str:
                 final_url = base
                 query = querystring
                 sep = "?"
@@ -90,31 +94,95 @@ class UrlManager:
                     final_url += f"?{key}={value}"
                 if query:
                     final_url += f"{sep}{query.build()}"
+                final_url += f"&v={api_version}"
                 return final_url
 
-class RequestsManager:
+class AuthManager:
     def __init__(self):
-        self.ratelimit_policy: tuple[int, int]
-        self.sleep_time: int
-        self.headers: Headers = None
-        self.requests_made: int = 0
+        self.authentication = {}
+    
+    def update(self, auth: Auth):
+        self.authentication.update(auth.get())
+    def current(self) -> dict[str, Any]:
+        return self.authentication
 
-    def set_headers(self, new_headers: Headers) -> None:
-        self.headers = new_headers
-    def set_ratelimit_policy(self, new_policy: tuple[int, int]) -> None:
-        self.ratelimit_policy = new_policy
-    def set_sleep_time(self, new_sleep_time: int) -> None:
-        self.sleep_time = new_sleep_time
-    def make_request(self, url: str, specific_headers: Headers = None) -> ApiResponse:
+class ApiResponse:
+    def __init__(self, response):
+        self.status_code: int = response.status_code
+        self.text: str = response.text
+        self.content: bytes = response.content
+        self.headers: Headers = Headers(response.headers)
+
+    def status(self) -> int:
+        return self.status_code
+
+    def sucessfull(self):
+        return self.status_code == 200
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"status_code": self.status_code,
+                "content": self.content,
+                "text": self.text,
+                "headers": self.headers()
+                }
+    
+    def __str__(self):
+        return f"[{self.status()}]"
+
+
+class RateLimit:
+    def __init__(self,
+                 policy: tuple[int, int] = (50, 30)):
+        self.policy: tuple[int, int] = policy
+    
+    def __str__(self):
+        max_requests: int = self.policy[0]
+        sleep: int = self.policy[1]
+        return f"[Ratelimit-Policy: {max_requests};{sleep}]"
+    
+    def check_limit(self,
+                    resp_headers: dict[str, str]):
+        requests_left: int = int(resp_headers["Ratelimit-Remaining"])
+        print(self)
+        print(f"{requests_left=}")
+        sleep_span: int = self.policy[1]
+        if requests_left <= 1:
+            time.sleep(sleep_span)
+
+class Connection:
+    def __init__(self):
+        self.headers: Headers = Headers()
+        self.authManager = AuthManager()
+        self.ratelimit = RateLimit()
+    
+    def make_request(self,
+                     url: str) -> ApiResponse:
+        def validate():
+            user_agent: str | None = self.headers("User-Agent")
+            if not user_agent:
+                raise UserAgentError("No user agent provided!")
+            if not len(user_agent) > 16:
+                raise UserAgentError("The user agent provided is too short")
+        def process_response_headers(apiResponse) -> None:
+            resp_data = apiResponse.to_dict()
+            headers = resp_data["headers"]
+            self.ratelimit.check_limit(headers)
         def do_request():
-            active_headers_in_request = specific_headers if specific_headers else self.headers()
-            print(f"{active_headers_in_request=}")
-            response = requests.get(url, headers=active_headers_in_request)
-            api_response = ApiResponse(response.status_code, response.content, response.text, response.headers)
-            return api_response
-        api_response = do_request()
-        return api_response
-        
+            response = requests.get(url, headers=self.headers())
+            return ApiResponse(response)
+        validate()
+        apiResponse: ApiResponse = do_request()
+        process_response_headers(apiResponse)
+        return apiResponse
+    
+    def set_request_headers(self,
+                            new_headers: Headers) -> None:
+        self.headers = new_headers
 
 if __name__ == "__main__":
-    ...
+    wrapper = Connection()
+    headers = Headers({"User-Agent": "NsHolen 0.0.0.dev0 (By: Orlys)"})
+    wrapper.set_request_headers(headers)
+    url = "https://www.nationstates.net/cgi-bin/api.cgi?nation=testlandia&q=census"
+    bruh = wrapper.make_request(url)
+    print(bruh.to_dict()["text"])
