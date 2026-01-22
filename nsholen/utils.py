@@ -1,58 +1,51 @@
 import requests
+from requests import Session
 from typing import Any, Callable
 import time
 from .exceptions import UserAgentError, RequestFail
 import re
 from urllib.parse import urlparse
-
-class Auth:
-    def __init__(self, **kwargs):
-        self.data = {}
-        self.data.update(kwargs)
-
-    def __call__(self, **kwargs):
-        self.data.update(kwargs)
-    
-    def get(self, key: str | None = None):
-        try:
-            return self.data if not key else self.data[key]
-        except KeyError:
-            raise ValueError(f"'{key}' not found")
-
-    def update(self, data: dict[str, Any]):
-        self.data.update(data)
+from pprint import pprint
 
 class Headers:
-    def __init__(self, headers: dict[str, str] | None = None):
-        self.headers = headers if headers else {}  
+    def __init__(self, headers: dict[str, Any] | None = None):
+        self.headers = {}  
+        if headers:
+            self.update(headers)
     def __call__(self):
         return self.headers
     def __getitem__(self,
-                    key: str,
-                    default: Any = None):
-        try:
-            return self.headers[key]
-        except:
-            return default
+                    key: str):
+        key: str = str(key).lower()
+        return self.headers[key]
     def __setitem__(self,
                     key: str,
                     value: str):
-         self.headers[key] = value   
+        key: str = str(key).lower()
+        self.headers[key] = value   
     def __delitem__(self, key: str):
+        key: str = str(key).lower()
         del self.headers[key]
     def __len__(self):
         return len(self.headers.keys())
 
-    def update(self, headers: dict[str, str]) -> None:
-        if not isinstance(headers, dict):
-            raise TypeError(f"headers must be of type dict, not {type(headers).__name__}")
-        self.headers.update(headers)
-    def remove(self, key: str) -> None:
-        del self.headers[key]
+    def update(self, new_headers: dict[str, str]) -> None:
+        if not isinstance(new_headers, dict):
+            raise TypeError(f"new_headers must be of type dict, not {type(new_headers).__name__}")
+        new_headers = {str(k).lower(): str(v) for k, v in new_headers.items()}
+        self.headers.update(new_headers)
     def clear_all(self) -> None:
         self.headers = {}
     def get_all(self) -> dict[str, str]:
         return self.headers
+    def get(self,
+            key: str,
+            default = None):
+        try:
+            key: str = str(key).lower()
+            return self.headers[key]
+        except KeyError:
+            return default
 
 class QueryString:
     def __init__(self,
@@ -114,11 +107,11 @@ class Url:
         if not isinstance(self.slugs, dict):
             raise TypeError(f"slugs must be of type dict, not {type(self.slugs).__name__}")
         if not isinstance(self.querystring, QueryString):
-            raise TypeError(f"querystring must be a QueryString() object, not {type(self.querystring).__name__}")
-    
+            raise TypeError(f"querystring must be a QueryString() object, not {type(self.querystring).__name__}")  
     def __call__(self):
         return self.build()
-    
+    def __str__(self):
+        return "Url()"
     def build(self,
               base: str = "https://www.nationstates.net"):
         def parse_path(path: str | list[str]):
@@ -154,10 +147,25 @@ class AuthManager:
     def __init__(self):
         self.authentication = {}
     
-    def update(self, auth: Auth):
-        self.authentication.update(auth.get())
-    def current(self) -> dict[str, Any]:
-        return self.authentication
+    def update(self, auth: dict[str, str]):
+        self.authentication.update(auth)
+    def auth_headers(self,
+                     headers: Headers):
+        password: str | None = headers.get("x-password")
+        autologin: str | None = headers.get("X-Autologin")
+        pin: str | None = headers.get("x-pin")
+        
+        auth: dict[str, str] = {}
+        if password:
+            auth["x-password"] = password
+        if autologin:
+            auth["x-autologin"] = autologin
+        if pin:
+            auth["x-pin"] = pin
+        
+        self.update(auth)
+    def current(self) -> Headers:
+        return Headers(self.authentication)
 
 class ApiResponse:
     def __init__(self,
@@ -165,8 +173,8 @@ class ApiResponse:
         self.status_code: int = response.status_code
         self.text: str = response.text
         self.content: bytes = response.content
-        self.headers: Headers = Headers(response.headers)
-
+        self.headers: Headers = Headers(dict(response.headers))
+       
     def status(self) -> int:
         return self.status_code
 
@@ -177,7 +185,7 @@ class ApiResponse:
         return {"status_code": self.status_code,
                 "content": self.content,
                 "text": self.text,
-                "headers": self.headers()
+                "headers": self.headers
                 }
     
     def __str__(self):
@@ -195,7 +203,7 @@ class RateLimit:
         return f"[RateLimit: {max_requests};{sleep}]"
     
     def check_limit(self,
-                    resp_headers: dict[str, str]):
+                    resp_headers: Headers):
         def sleep_conditions():
             retry_after: str | None = resp_headers.get('Retry-After') 
             retry_after: int | None = int(retry_after) if retry_after else None
@@ -208,26 +216,39 @@ class RateLimit:
         sleep_conditions()
 
 class Connection:
-    def __init__(self):
-        self.headers: Headers = Headers()
+    def __init__(self,
+                 use_session: bool = False):
+        self.use_session: bool = use_session
+        self.default_headers: Headers = Headers()
         self.authManager = AuthManager()
         self.ratelimit = RateLimit()
+        self._session = Session()
+    
     
     def make_request(self,
                      url: str,
                      raise_exception: bool = False) -> ApiResponse:
         def validate():
-            user_agent: str | None = self.headers["User-Agent"]
+            user_agent: str | None = self.default_headers["User-Agent"]
             if not user_agent:
                 raise UserAgentError("No user agent provided!")
             if not len(user_agent) > 16:
                 raise UserAgentError("The user agent provided is too short")
         def process_response_headers(apiResponse) -> None:
-            resp_data = apiResponse.to_dict()
-            headers = resp_data["headers"]
+            resp_data: dict[str, Any] = apiResponse.to_dict()
+            headers: Headers = resp_data["headers"]
+            
+            # RateLimiting Logic
             self.ratelimit.check_limit(headers)
+            
+            # Updates authentication
+            self.authManager.auth_headers(headers)
+            self.set_request_headers(self.authManager.current())
         def do_request():
-            response = requests.get(url, headers=self.headers())
+            if not self.use_session:
+                response = requests.get(url, headers=self.default_headers())
+            else:
+                response = self._session.get(url)
             if raise_exception and not response.status_code == 200:
                 raise RequestFail(response.status_code)
             return ApiResponse(response)
@@ -236,13 +257,17 @@ class Connection:
         process_response_headers(apiResponse)
         return apiResponse
     
+    def update_auth(self,
+                    password: str):
+        auth: dict[str, str] = {"X-Password": password}
+        self.set_request_headers(Headers(auth))
+    
     def set_request_headers(self,
                             new_headers: Headers) -> None:
-        self.headers = new_headers
+        if not isinstance(new_headers, Headers):
+            raise TypeError(f"new_headers must be a Headers() object, not {type(new_headers).__name__}")
+        self.default_headers.update(new_headers())
+        self._session.headers.update(new_headers())
 
 if __name__ == "__main__":
-    q = QueryString("numnations")
-    url = Url("cgi-bin/api.cgi/",
-              {"nation": "The Ultimate Hero"},
-              querystring=q)
-    print(url())
+    pass

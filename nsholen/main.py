@@ -1,11 +1,14 @@
-from .utils import QueryString, ApiResponse, Headers, Connection
-from decimal import Decimal, localcontext, InvalidOperation, ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_UP, ROUND_DOWN
+from decimal import Decimal, localcontext, ROUND_HALF_EVEN
 
 class HandfulTools:
     def __init__(self):
         pass
     def is_real_number(self,
                        string: str):
+        """
+        Checks if the provided string
+        is a real number or not.
+        """
         try:
             string = string.replace(",", ".")
             float(string)
@@ -33,3 +36,12 @@ class HandfulTools:
                 return d.quantize(Decimal(template))
             except TypeError:
                 raise ValueError(f"'{rounding}' is not a valid rounding")
+
+if __name__ == "__main__":
+    handy = HandfulTools()
+    print(f"{handy.is_real_number("12.7E4")=}")
+    print(f"{handy.scientific_notation_to_decimal("12.7E4")=}")
+    print(f"{handy.decimal_into_scientific_notation("127000")=}")
+    print(f"{handy.decimal_into_scientific_notation("12.7E4")=}")
+    print(f"{handy.decimal_rounding("4.8279")=}")
+    

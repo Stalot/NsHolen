@@ -15,6 +15,7 @@ class RequestFail(Exception):
             contexts = {400: "Bad Request",
                         403: "Forbidden",
                         404: "Not Found",
+                        409: "Conflict",
                         429: "Too Many Requests",
                         503: "Service Unavailable"
                         }
