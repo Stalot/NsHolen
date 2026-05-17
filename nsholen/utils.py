@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import quote_plus, urljoin, urlunparse
 from typing import Any, Callable, Optional
+import urllib
 
 def build_shards_url(nation_name: Optional[str] = None,
                      region_name: Optional[str] = None,
@@ -26,12 +27,11 @@ def build_shards_url(nation_name: Optional[str] = None,
     return new_url
 
 def make_request(url: str,
-                 auth: Optional[Auth]):
-    pass
+                 headers: dict[str, str]):
+    req: bytes = urllib.request.Request(url,
+                                        headers=headers)
+    response: str = urllib.request.urlopen(req).read().decode("UTF-8", "LATIN-1")
+    return response
 
 if __name__ == "__main__":
-    url = build_shards_url(nation_name="fullworthia",
-                           shards=["census"],
-                           params={"scale": "7+8",
-                                   "mode": "score"})
-    print(url)
+    pass
