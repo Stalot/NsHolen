@@ -2,6 +2,8 @@ import requests
 from urllib.parse import quote_plus, urljoin, urlunparse
 from typing import Any, Callable, Optional
 import urllib
+from http.client import HTTPResponse
+import xmltodict
 
 def build_shards_url(nation_name: Optional[str] = None,
                      region_name: Optional[str] = None,
@@ -26,12 +28,44 @@ def build_shards_url(nation_name: Optional[str] = None,
     new_url += query_string
     return new_url
 
-def make_request(url: str,
-                 headers: dict[str, str]):
-    req: bytes = urllib.request.Request(url,
-                                        headers=headers)
-    response: str = urllib.request.urlopen(req).read().decode("UTF-8", "LATIN-1")
-    return response
+class ApiResponse():
+    def __init__(self,
+                 resp_object: HTTPResponse):
+        self.status_code: int = resp_object.status
+        self.text: str = resp_object.read().decode("UTF-8", "LATIN-1")
+        self.data = self._xml_to_dict(self.text)
+
+    def _xml_to_dict(self, xml_string: str):
+        def post_processing(path, key, value):
+            new_key = key.lower()
+            return (new_key, value)
+        return xmltodict.parse(xml_string,
+                               attr_prefix="",
+                               postprocessor=post_processing)
+
+    def as_dict(self):
+        return {
+            "status_code": self.status_code,
+            "text": self.text,
+            "data": self.data
+        }
+
+    def __str__(self):
+        return f"ApiResponse[{self.status_code}]"
+
+class Connection:
+    def __init__(self) -> None:
+        pass
+
+    def make_request(self,
+                     url: str,
+                     headers: dict[str, str]):
+        req: bytes = urllib.request.Request(url,
+                                            headers=headers)
+        response: ApiResponse = ApiResponse(urllib.request.urlopen(req))
+
+        #print(f"{response.as_dict()}")
+        return response
 
 if __name__ == "__main__":
     pass
