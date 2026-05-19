@@ -1,14 +1,11 @@
 import requests
-from urllib.parse import quote_plus, urljoin, urlunparse
 from typing import Any, Callable, Optional
-import urllib
-from http.client import HTTPResponse
 import xmltodict
 
 def build_shards_url(nation_name: Optional[str] = None,
                      region_name: Optional[str] = None,
                      shards: Optional[list[str]] = None,
-                     params = None):
+                     params: Optional[dict[str, str]] = None):
     base: str = "https://www.nationstates.net/cgi-bin/api.cgi"
     new_url: str = base
     if nation_name and region_name:
@@ -30,9 +27,9 @@ def build_shards_url(nation_name: Optional[str] = None,
 
 class ApiResponse():
     def __init__(self,
-                 resp_object: HTTPResponse):
-        self.status_code: int = resp_object.status
-        self.text: str = resp_object.read().decode("UTF-8", "LATIN-1")
+                 resp_object: requests.Response):
+        self.status_code: int = resp_object.status_code
+        self.text: str = resp_object.text
         self.data = self._xml_to_dict(self.text)
 
     def _xml_to_dict(self, xml_string: str):
@@ -60,11 +57,11 @@ class Connection:
     def make_request(self,
                      url: str,
                      headers: dict[str, str]):
-        req: bytes = urllib.request.Request(url,
-                                            headers=headers)
-        response: ApiResponse = ApiResponse(urllib.request.urlopen(req))
-
-        #print(f"{response.as_dict()}")
+        response: ApiResponse = ApiResponse(
+            requests.get(url,
+                         headers=headers,
+            )
+        )
         return response
 
 if __name__ == "__main__":
