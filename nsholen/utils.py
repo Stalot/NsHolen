@@ -30,7 +30,6 @@ class ApiResponse():
                  resp_object: requests.Response):
         self.status_code: int = resp_object.status_code
         self.text: str = resp_object.text
-        self.data = self._xml_to_dict(self.text)
 
     def _xml_to_dict(self, xml_string: str):
         def post_processing(path, key, value):
@@ -44,11 +43,27 @@ class ApiResponse():
         return {
             "status_code": self.status_code,
             "text": self.text,
-            "data": self.data
+            "data": self._xml_to_dict(self.text)
         }
 
     def __str__(self):
         return f"ApiResponse[{self.status_code}]"
+
+class NationAuth(requests.auth.AuthBase):
+    def __init__(self,
+                 nation_name: str,
+                 password: Optional[str] = None,
+                 autologin: Optional[str] = None):
+        self.nation_name: str = nation_name
+        self.password: Optional[str] = password
+        self.autologin: Optional[str] = autologin
+
+    def __call__(self, r: requests.models.PreparedRequest):
+        if self.password:
+            r.headers["x-password"] = self.password
+        if self.autologin:
+            r.headers["x-autologin"] = self.autologin
+        return r
 
 class Connection:
     def __init__(self) -> None:
@@ -56,12 +71,16 @@ class Connection:
 
     def make_request(self,
                      url: str,
-                     headers: dict[str, str]):
+                     headers: dict[str, str],
+                     auth: NationAuth):
         response: ApiResponse = ApiResponse(
             requests.get(url,
                          headers=headers,
+                         auth=auth
             )
         )
+        if response.status_code != 200:
+            raise ValueError(response.status_code)
         return response
 
 if __name__ == "__main__":
